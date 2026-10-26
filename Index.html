@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Bus Attend AI</title>
+
+<link rel="stylesheet"
+ href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f3f6fb;
+  color: #18243b;
+}
+header {
+  background: #142c4e;
+  color: white;
+  padding: 22px;
+}
+header h1 { margin: 0 0 7px; }
+header p { margin: 0; color: #d5e2f5; }
+nav {
+  background: white;
+  padding: 13px 20px;
+  border-bottom: 1px solid #ddd;
+}
+nav a {
+  color: #142c4e;
+  margin-right: 20px;
+  text-decoration: none;
+  font-weight: bold;
+}
+main { padding: 20px; max-width: 1200px; margin: auto; }
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+}
+.card, .panel {
+  background: white;
+  padding: 18px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px #18243b10;
+  margin-bottom: 18px;
+}
+.number { font-size: 30px; font-weight: bold; margin-top: 8px; }
+button, select, input {
+  padding: 10px;
+  border: 1px solid #ccd5e2;
+  border-radius: 7px;
+  font-size: 14px;
+}
+button {
+  background: #1768d1;
+  color: white;
+  border: 0;
+  cursor: pointer;
+  margin: 4px 3px 4px 0;
+}
+button:hover { background: #1052a9; }
+button.secondary { background: #475569; }
+button.danger { background: #b42318; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  text-align: left;
+  padding: 12px 9px;
+  border-bottom: 1px solid #e7ebf1;
+}
+th { background: #f5f7fa; }
+#map { height: 330px; border-radius: 10px; }
+.status { font-weight: bold; }
+.note { color: #5b6679; font-size: 13px; }
+#message { margin: 10px 0; }
+.alert {
+  background: #fff4db;
+  border-left: 4px solid #d99700;
+  padding: 12px;
+  margin: 8px 0;
+  border-radius: 5px;
+}
+footer { text-align: center; padding: 20px; color: #64748b; }
+@media(max-width:600px) {
+  main { padding: 12px; }
+  header { padding: 18px; }
+}
+</style>
+</head>
+
+<body>
+<header>
+  <h1>Smart Bus Attend AI</h1>
+  <p>School Transport • Student Attendance • GPS Monitoring</p>
+</header>
+
+<nav>
+  <a href="#dashboard">Dashboard</a>
+  <a href="#attendance">Attendance</a>
+  <a href="#tracking">GPS Tracking</a>
+  <a href="#reports">Reports</a>
+</nav>
+
+<main>
+<section id="dashboard">
+  <h2>Dashboard</h2>
+  <div class="cards">
+    <div class="card">Total Students
+      <div class="number" id="total">0</div>
+    </div>
+    <div class="card">Present
+      <div class="number" id="present">0</div>
+    </div>
+    <div class="card">Absent
+      <div class="number" id="absent">0</div>
+    </div>
+    <div class="card">Late
+      <div class="number" id="late">0</div>
+    </div>
+  </div>
+</section>
+
+<section id="attendance" class="panel">
+  <h2>Manual Attendance</h2>
+  <label for="bus">Select bus:</label>
+  <select id="bus" onchange="renderStudents()">
+    <option value="Bus 1">Bus 1</option>
+    <option value="Bus 2">Bus 2</option>
+  </select>
+
+  <label for="date">Date:</label>
+  <input type="date" id="date">
+
+  <div style="margin-top:12px">
+    <input id="studentName" placeholder="Student name">
+    <input id="studentClass" placeholder="Class / Section">
+    <button onclick="addStudent()">Add Student</button>
+  </div>
+
+  <div id="message" role="status"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Class</th>
+          <th>Bus</th>
+          <th>Attendance</th>
+        </tr>
+      </thead>
+      <tbody id="studentRows"></tbody>
+    </table>
+  </div>
+
+  <button onclick="saveAttendance()">Save Attendance</button>
+  <button class="secondary" onclick="markAll('Present')">
+    Mark All Present
+  </button>
+  <p class="note">
+    Demo records are stored in this browser. This is not a secure
+    multi-user school database.
+  </p>
+</section>
+
+<section id="tracking" class="panel">
+  <h2>Live GPS Bus Tracking</h2>
+  <p id="gpsStatus">Showing the sample bus location.</p>
+  <div id="map"></div>
+  <button onclick="getGPS()">Use This Device's GPS</button>
+  <button class="secondary" onclick="showDemoLocation()">
+    Show Demo Location
+  </button>
+  <p class="note">
+    GPS reads the device running this page, not automatically the bus.
+    To track a moving bus, a GPS-enabled device must be inside the bus
+    and send its location to the website.
+  </p>
+</section>
+
+<section id="reports" class="panel">
+  <h2>Attendance Reports & AI Alerts</h2>
+  <p id="reportSummary">Save attendance to view the report.</p>
+  <div id="alerts"></div>
+  <button onclick="downloadReport()">Download CSV Report</button>
+  <button class="secondary" onclick="showAlerts()">Check Absence Alerts</button>
+</section>
+</main>
+
+<footer>Smart Bus Attend AI | Student Project Prototype</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+const defaultStudents = [
+  {id: 1, name: "Aarav Sharma", cls: "8-A", bus: "Bus 1"},
+  {id: 2, name: "Ananya Singh", cls: "8-A", bus: "Bus 1"},
+  {id: 3, name: "Kabir Verma", cls: "9-B", bus: "Bus 1"},
+  {id: 4, name: "Meera Gupta", cls: "7-A", bus: "Bus 2"},
+  {id: 5, name: "Arjun Kumar", cls: "7-B", bus: "Bus 2"}
+];
+
+function readStore(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key));
+    return value ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+let students = readStore("sba_students", defaultStudents);
+let records = readStore("sba_records", []);
+let nextId = Math.max(0, ...students.map(s => Number(s.id) || 0)) + 1;
+
+const busInput = document.getElementById("bus");
+const dateInput = document.getElementById("date");
+const message = document.getElementById("message");
+
+dateInput.value = new Date().toLocaleDateString("en-CA");
+
+function notify(text) {
+  message.textContent = text;
+}
+
+function persist() {
+  localStorage.setItem("sba_students", JSON.stringify(students));
+  localStorage.setItem("sba_records", JSON.stringify(records));
+}
+
+function getRecord(id, bus, date) {
+  return records.find(r =>
+    r.id === id && r.bus === bus && r.date === date
+  );
+}
+
+function renderStudents() {
+  const bus = busInput.value;
+  const date = dateInput.value;
+  const rows = document.getElementById("studentRows");
+
+  rows.innerHTML = "";
+
+  students.filter(s => s.bus === bus).forEach(s => {
+    const saved = getRecord(s.id, bus, date);
+    const status = saved ? saved.status : "Not Marked";
+    const tr = document.createElement("tr");
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = s.name;
+
+    const classCell = document.createElement("td");
+    classCell.textContent = s.cls;
+
+    const busCell = document.createElement("td");
+    busCell.textContent = s.bus;
+
+    const statusCell = document.createElement("td");
+    const select = document.createElement("select");
+    select.dataset.id = s.id;
+
+    ["Not Marked", "Present", "Absent", "Late"].forEach(value => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+
+    select.value = status;
+    statusCell.appendChild(select);
+
+    tr.append(nameCell, classCell, busCell, statusCell);
+    rows.appendChild(tr);
+  });
+
+  updateDashboard();
+}
+
+function addStudent() {
+  const nameInput = document.getElementById("studentName");
+  const classInput = document.getElementById("studentClass");
+  const name = nameInput.value.trim();
+  const cls = classInput.value.trim();
+
+  if (!name || !cls) {
+    notify("Please enter both the student's name and class.");
+    return;
+  }
+
+  students.push({
+    id: nextId++,
+    name,
+    cls,
+    bus: busInput.value
+  });
+
+  persist();
+  nameInput.value = "";
+  classInput.value = "";
+  renderStudents();
+  notify("Student added successfully.");
+}
+
+function markAll(status) {
+  document.querySelectorAll("#studentRows select").forEach(select => {
+    select.value = status;
+  });
+}
+
+function saveAttendance() {
+  const bus = busInput.value;
+  const date = dateInput.value;
+
+  if (!date) {
+    notify("Please select a date.");
+    return;
+  }
+
+  const selects = [...document.querySelectorAll("#studentRows select")];
+
+  if (selects.some(s => s.value === "Not Marked")) {
+    notify("Please mark every student before saving.");
+    return;
+  }
+
+  selects.forEach(select => {
+    const id = Number(select.dataset.id);
+    const existing = getRecord(id, bus, date);
+
+    if (existing) {
+      existing.status = select.value;
+    } else {
+      records.push({id, bus, date, status: select.value});
+    }
+  });
+
+  persist();
+  updateDashboard();
+  renderReport();
+  showAlerts();
+  notify("Attendance saved successfully.");
+}
+
+function updateDashboard() {
+  const bus = busInput.value;
+  const date = dateInput.value;
+  const list = students.filter(s => s.bus === bus);
+  const today = records.filter(r => r.bus === bus && r.date === date);
+
+  document.getElementById("total").textContent = list.length;
+  document.getElementById("present").textContent =
+    today.filter(r => r.status === "Present").length;
+  document.getElementById("absent").textContent =
+    today.filter(r => r.status === "Absent").length;
+  document.getElementById("late").textContent =
+    today.filter(r => r.status === "Late").length;
+}
+
+function renderReport() {
+  const date = dateInput.value;
+  const list = records.filter(r => r.date === date);
+
+  document.getElementById("reportSummary").textContent =
+    `Date: ${date} | Records: ${list.length} | Present: ` +
+    list.filter(r => r.status === "Present").length +
+    ` | Absent: ` +
+    list.filter(r => r.status === "Absent").length +
+    ` | Late: ` +
+    list.filter(r => r.status === "Late").length;
+}
+
+function showAlerts() {
+  const bus = busInput.value;
+  const date = dateInput.value;
+  const box = document.getElementById("alerts");
+  box.replaceChildren();
+
+  // Demonstration rule: alert if absent on at least 2 of the
+  // latest 3 dates on which attendance was recorded for this bus.
+  const dates = [...new Set(
+    records.filter(r => r.bus === bus && r.date <= date)
+      .map(r => r.date)
+  )].sort().reverse().slice(0, 3);
+
+  let count = 0;
+
+  students.filter(s => s.bus === bus).forEach(s => {
+    const absentCount = dates.filter(d =>
+      getRecord(s.id, bus, d)?.status === "Absent"
+    ).length;
+
+    if (dates.length >= 2 && absentCount >= 2) {
+      const div = document.createElement("div");
+      div.className = "alert";
+      div.textContent =
+        `Attendance alert: ${s.name} was absent on ` +
+        `${absentCount} of the latest ${dates.length} recorded dates.`;
+      box.appendChild(div);
+      count++;
+    }
+  });
+
+  if (!count) {
+    const p = document.createElement("p");
+    p.textContent = "No repeated-absence alerts found in the demo data.";
+    box.appendChild(p);
+  }
+}
+
+function downloadReport() {
+  const header = ["Student", "Class", "Bus", "Date", "Status"];
+  const rows = records.map(r => {
+    const s = students.find(st => st.id === r.id);
+    return [
+      s?.name ?? "Unknown",
+      s?.cls ?? "",
+      r.bus,
+      r.date,
+      r.status
+    ];
+  });
+
+  const csvCell = value =>
+    '"' + String(value).replace(/"/g, '""') + '"';
+
+  const csv = [header, ...rows]
+    .map(row => row.map(csvCell).join(","))
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF" + csv], {
+    type: "text/csv;charset=utf-8;"
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "smart-bus-attendance.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// Map demonstration location. These are sample coordinates,
+// not the location of an actual school bus.
+const map = L.map("map").setView([28.6139, 77.2090], 12);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+let marker = L.marker([28.6139, 77.2090])
+  .addTo(map)
+  .bindPopup("Demo Bus Location")
+  .openPopup();
+
+function moveMarker(lat, lng, label) {
+  marker.setLatLng([lat, lng]).bindPopup(label).openPopup();
+  map.setView([lat, lng], 15);
+}
+
+function showDemoLocation() {
+  moveMarker(28.6139, 77.2090, "Demo Bus Location");
+  document.getElementById("gpsStatus").textContent =
+    "Showing a sample location in New Delhi, not a live bus position.";
+}
+
+function getGPS() {
+  const status = document.getElementById("gpsStatus");
+
+  if (!navigator.geolocation) {
+    status.textContent = "GPS location is not supported by this browser.";
+    return;
+  }
+
+  status.textContent = "Requesting location permission...";
+
+  navigator.geolocation.getCurrentPosition(
+    position => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      moveMarker(lat, lng, "Current device location");
+      status.textContent =
+        `Device GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)}. ` +
+        "This is the device's location, not necessarily the bus's.";
+    },
+    error => {
+      status.textContent =
+        "Location unavailable. Allow location access and use HTTPS " +
+        "or localhost. Error: " + error.message;
+    },
+    {enableHighAccuracy: true, timeout: 15000}
+  );
+}
+
+dateInput.addEventListener("change", () => {
+  renderStudents();
+  renderReport();
+  showAlerts();
+});
+
+busInput.addEventListener("change", () => {
+  renderStudents();
+  showAlerts();
+});
+
+renderStudents();
+renderReport();
+showAlerts();
+</script>
+</body>
+</html>
